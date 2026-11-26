@@ -79,7 +79,22 @@ textarea { resize: vertical; }
   text-align: center;
 }
 
+/* ---------- language switch ---------- */
+.lang-switch { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.lang-switch button {
+  border: none;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 5px 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lang-switch button + button { border-left: 1px solid var(--border); }
+.lang-switch button[aria-pressed="true"] { background: var(--primary); color: var(--primary-text); }
+
 /* ---------- login ---------- */
+.login__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
 .login__card {
   width: min(360px, 100%);
@@ -147,7 +162,7 @@ textarea { resize: vertical; }
   background: color-mix(in srgb, var(--c) 8%, white);
   color: var(--c);
 }
-.status__label { font-weight: 600; white-space: nowrap; }
+.status__label { font-weight: 600; }
 .status__code { font: 11px ui-monospace, Consolas, monospace; opacity: .85; }
 .status--SUBMITTED { --c: var(--st-submitted); }
 .status--IN_REVIEW { --c: var(--st-review); }

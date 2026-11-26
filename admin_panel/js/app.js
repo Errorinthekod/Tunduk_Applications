@@ -1,11 +1,13 @@
 // UI logic: login, table rendering, editor dialog, demo controls.
+// All visible text goes through t() — see js/i18n.js and js/locales/.
 import { api, auth, ApiError } from "./api.js";
+import { applyTranslations, getLocale, has, onLangChange, setLang, t } from "./i18n.js";
 
 const CUSTOM = "__custom__";
 const UNKNOWN = "UNKNOWN";
 
 const state = {
-  statuses: [],       // [{code, label, needs_explanation, next}]
+  statuses: [],       // [{code, needs_explanation, next}] from the backend
   applications: [],
   editing: null,      // application being edited, or null when creating
 };
@@ -39,9 +41,26 @@ const el = {
 const escapeHtml = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const dateFmt = new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" });
+const formatDate = (iso) =>
+  new Intl.DateTimeFormat(getLocale(), { dateStyle: "short", timeStyle: "short" }).format(new Date(iso));
 
 const statusInfo = (code) => state.statuses.find((s) => s.code === code);
+
+/** Translated status title; unknown codes get a generic label. */
+const statusLabel = (code) => (has(`statuses.${code}`) ? t(`statuses.${code}`) : t("statuses.unknown"));
+
+/** Turn any error into a message in the current language. */
+function errorMessage(err, context) {
+  if (!(err instanceof ApiError)) return err.message || t("errors.generic");
+  switch (err.status) {
+    case 0: return t("errors.network");
+    case 401: return t("errors.wrongToken");
+    case 404: return t("errors.notFound");
+    case 409: return context === "create" ? t("errors.duplicateNumber") : t("errors.noNextStatus");
+    case 422: return t("errors.validation");
+    default: return err.status >= 500 ? t("errors.server", { status: err.status }) : t("errors.generic");
+  }
+}
 
 let toastTimer;
 function toast(message, isError = false) {
@@ -52,12 +71,12 @@ function toast(message, isError = false) {
   toastTimer = setTimeout(() => (el.toast.hidden = true), 3000);
 }
 
-function handleError(err) {
+function handleError(err, context) {
   if (err instanceof ApiError && err.status === 401) {
-    logout("Session expired or token is wrong. Please sign in again.");
+    logout(t("errors.sessionExpired"));
     return;
   }
-  toast(err.message || "Something went wrong", true);
+  toast(errorMessage(err, context), true);
 }
 
 // ---------- views ----------
@@ -72,9 +91,9 @@ function showLogin(message = "") {
 }
 
 async function showPanel() {
+  state.statuses = await api.statuses();
   el.loginView.hidden = true;
   el.panelView.hidden = false;
-  state.statuses = await api.statuses();
   fillStatusOptions();
   await Promise.all([loadApplications(), loadDemoState()]);
 }
@@ -98,6 +117,8 @@ async function loadDemoState() {
   renderDemoState(await api.demoState());
 }
 
+const reloadAll = () => Promise.all([loadApplications(), loadDemoState()]);
+
 function renderDemoState({ fail_mode, total_applications }) {
   el.failToggle.checked = fail_mode;
   el.failBanner.hidden = !fail_mode;
@@ -107,18 +128,25 @@ function renderDemoState({ fail_mode, total_applications }) {
 // ---------- rendering ----------
 
 function fillStatusOptions() {
-  const known = state.statuses.map((s) => `<option value="${s.code}">${escapeHtml(s.label)} (${s.code})</option>`).join("");
+  const keepFilter = el.statusFilter.value;
+  const keepStatus = el.statusSelect.value;
+  const known = state.statuses
+    .map((s) => `<option value="${s.code}">${escapeHtml(statusLabel(s.code))} (${s.code})</option>`)
+    .join("");
+
   el.statusFilter.innerHTML =
-    `<option value="">All statuses</option>${known}<option value="${UNKNOWN}">Unknown code</option>`;
-  el.statusSelect.innerHTML = `${known}<option value="${CUSTOM}">Other / custom code…</option>`;
+    `<option value="">${escapeHtml(t("toolbar.allStatuses"))}</option>${known}` +
+    `<option value="${UNKNOWN}">${escapeHtml(t("toolbar.unknownCode"))}</option>`;
+  el.statusSelect.innerHTML = `${known}<option value="${CUSTOM}">${escapeHtml(t("editor.customOption"))}</option>`;
+
+  el.statusFilter.value = keepFilter;
+  if (keepStatus) el.statusSelect.value = keepStatus;
 }
 
 function statusBadge(code) {
-  const info = statusInfo(code);
-  const cls = info ? `status--${code}` : "status--unknown";
-  const label = info ? info.label : "Unknown status";
+  const cls = statusInfo(code) ? `status--${code}` : "status--unknown";
   return `<span class="status ${cls}">
-            <span class="status__label">${escapeHtml(label)}</span>
+            <span class="status__label">${escapeHtml(statusLabel(code))}</span>
             <span class="status__code">${escapeHtml(code)}</span>
           </span>`;
 }
@@ -127,27 +155,28 @@ function explanationCell(app) {
   const info = statusInfo(app.status);
   if (!info?.needs_explanation) return `<span class="muted">—</span>`;
   if (!app.explanation_ru && !app.explanation_ky) {
-    return `<span class="muted">Not set → citizen sees fallback</span>`;
+    return `<span class="muted">${escapeHtml(t("table.noExplanation"))}</span>`;
   }
-  return `${escapeHtml(app.explanation_ru ?? "")}
-          <span class="cell-sub">${escapeHtml(app.explanation_ky ?? "")}</span>`;
+  return `<span lang="ru">${escapeHtml(app.explanation_ru ?? "")}</span>
+          <span class="cell-sub" lang="ky">${escapeHtml(app.explanation_ky ?? "")}</span>`;
 }
 
 function rowHtml(app) {
   const next = statusInfo(app.status)?.next;
-  const nextLabel = next ? statusInfo(next)?.label ?? next : null;
+  const nextTitle = next ? t("actions.nextHint", { label: statusLabel(next) }) : t("actions.noNext");
   return `
     <tr data-id="${app.id}" class="${app.action_required ? "row--action" : ""}">
       <td class="cell-number">${escapeHtml(app.number)}</td>
-      <td>${escapeHtml(app.service_name_ru)}<span class="cell-sub">${escapeHtml(app.service_name_ky)}</span></td>
+      <td><span lang="ru">${escapeHtml(app.service_name_ru)}</span>
+          <span class="cell-sub" lang="ky">${escapeHtml(app.service_name_ky)}</span></td>
       <td>${statusBadge(app.status)}</td>
       <td class="cell-explanation">${explanationCell(app)}</td>
-      <td>${dateFmt.format(new Date(app.updated_at))}</td>
+      <td>${formatDate(app.updated_at)}</td>
       <td class="table__actions">
         <button class="btn btn--sm" data-action="advance" ${next ? "" : "disabled"}
-                title="${next ? `Move to: ${escapeHtml(nextLabel)}` : "No next step in the demo chain"}">Next →</button>
-        <button class="btn btn--sm" data-action="edit">Edit</button>
-        <button class="btn btn--sm btn--danger" data-action="delete">Delete</button>
+                title="${escapeHtml(nextTitle)}">${escapeHtml(t("actions.next"))}</button>
+        <button class="btn btn--sm" data-action="edit">${escapeHtml(t("actions.edit"))}</button>
+        <button class="btn btn--sm btn--danger" data-action="delete">${escapeHtml(t("actions.delete"))}</button>
       </td>
     </tr>`;
 }
@@ -158,6 +187,12 @@ function renderTable() {
 }
 
 // ---------- editor dialog ----------
+
+function updateEditorTitle() {
+  el.editorTitle.textContent = state.editing
+    ? t("editor.editTitle", { number: state.editing.number })
+    : t("editor.newTitle");
+}
 
 function updateEditorVisibility() {
   const code = el.statusSelect.value;
@@ -172,7 +207,7 @@ function openEditor(app = null) {
   const f = el.editorForm.elements;
   el.editorForm.reset();
   el.editorError.hidden = true;
-  el.editorTitle.textContent = app ? `Edit application ${app.number}` : "New application";
+  updateEditorTitle();
 
   f.number.disabled = !!app;
   f.number.value = app?.number ?? "";
@@ -195,7 +230,7 @@ function openEditor(app = null) {
 function readEditor() {
   const f = el.editorForm.elements;
   const status = el.statusSelect.value === CUSTOM ? f.status_custom.value.trim().toUpperCase() : el.statusSelect.value;
-  if (!status) throw new Error("Enter a custom status code.");
+  if (!status) throw new Error(t("errors.customRequired"));
 
   const withExplanation = !el.explanationFields.hidden;
   const data = {
@@ -213,21 +248,23 @@ function readEditor() {
 async function saveEditor(event) {
   event.preventDefault();
   const saveBtn = $("#editor-save");
+  const context = state.editing ? "update" : "create";
   saveBtn.disabled = true;
   try {
     const data = readEditor();
     if (state.editing) {
+      const statusChanged = data.status !== state.editing.status;
       await api.updateApplication(state.editing.id, data);
-      toast("Application status updated");
+      toast(statusChanged ? t("toast.statusUpdated") : t("toast.saved"));
     } else {
       await api.createApplication(data);
-      toast("Application created");
+      toast(t("toast.created"));
     }
     el.editor.close();
-    await Promise.all([loadApplications(), loadDemoState()]);
+    await reloadAll();
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) return handleError(err);
-    el.editorError.textContent = err.message;
+    el.editorError.textContent = errorMessage(err, context);
     el.editorError.hidden = false;
   } finally {
     saveBtn.disabled = false;
@@ -250,18 +287,18 @@ async function onRowAction(event) {
         return;
       case "advance": {
         const updated = await api.advanceApplication(id);
-        toast(`${updated.number}: ${statusInfo(updated.status)?.label ?? updated.status}`);
+        toast(t("toast.advanced", { number: updated.number, label: statusLabel(updated.status) }));
         break;
       }
       case "delete":
-        if (!confirm(`Delete application ${app.number}?`)) return;
+        if (!confirm(t("confirm.delete", { number: app.number }))) return;
         await api.deleteApplication(id);
-        toast("Application deleted");
+        toast(t("toast.deleted"));
         break;
     }
-    await Promise.all([loadApplications(), loadDemoState()]);
+    await reloadAll();
   } catch (err) {
-    handleError(err);
+    handleError(err, btn.dataset.action);
   }
 }
 
@@ -269,12 +306,12 @@ async function onRowAction(event) {
 
 async function onDemoAction(event) {
   const action = event.currentTarget.dataset.demo;
-  if (action === "clear" && !confirm("Delete ALL applications?")) return;
+  if (action === "clear" && !confirm(t("confirm.clear"))) return;
   try {
     const s = action === "reset" ? await api.demoReset() : await api.demoClear();
     renderDemoState(s);
     await loadApplications();
-    toast(action === "reset" ? "Test data restored" : "All applications deleted");
+    toast(action === "reset" ? t("toast.restored") : t("toast.cleared"));
   } catch (err) {
     handleError(err);
   }
@@ -298,29 +335,45 @@ async function onLogin(event) {
     await showPanel();
   } catch (err) {
     auth.clear();
-    showLogin(err instanceof ApiError && err.status === 401 ? "Wrong token." : err.message);
+    showLogin(errorMessage(err));
   }
+}
+
+// ---------- language ----------
+
+/** Re-render everything built in JS (static HTML is handled by applyTranslations). */
+function onLanguageChanged() {
+  if (state.statuses.length) {
+    fillStatusOptions();
+    renderTable();
+  }
+  if (el.editor.open) updateEditorTitle();
+  if (!el.loginError.hidden) el.loginError.hidden = true; // old message is in the previous language
 }
 
 // ---------- wiring ----------
 
 function debounce(fn, ms) {
-  let t;
+  let timer;
   return (...args) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), ms);
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
   };
 }
 
 function init() {
+  applyTranslations();
+  onLangChange(onLanguageChanged);
+  document.querySelectorAll("[data-lang]").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
   el.loginForm.addEventListener("submit", onLogin);
   $("#logout-btn").addEventListener("click", () => logout());
-  $("#refresh-btn").addEventListener("click", () => Promise.all([loadApplications(), loadDemoState()]).catch(handleError));
+  $("#refresh-btn").addEventListener("click", () => reloadAll().catch((e) => handleError(e)));
   $("#create-btn").addEventListener("click", () => openEditor());
   document.querySelectorAll("[data-demo]").forEach((b) => b.addEventListener("click", onDemoAction));
   el.failToggle.addEventListener("change", onFailToggle);
-  el.search.addEventListener("input", debounce(() => loadApplications().catch(handleError), 250));
-  el.statusFilter.addEventListener("change", () => loadApplications().catch(handleError));
+  el.search.addEventListener("input", debounce(() => loadApplications().catch((e) => handleError(e)), 250));
+  el.statusFilter.addEventListener("change", () => loadApplications().catch((e) => handleError(e)));
   el.body.addEventListener("click", onRowAction);
   el.statusSelect.addEventListener("change", updateEditorVisibility);
   el.editorForm.addEventListener("submit", saveEditor);
@@ -329,7 +382,7 @@ function init() {
   if (auth.get()) {
     showPanel().catch((err) => {
       auth.clear();
-      showLogin(err.message);
+      showLogin(errorMessage(err));
     });
   } else {
     showLogin();

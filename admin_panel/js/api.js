@@ -11,6 +11,11 @@ export const auth = {
   clear: () => sessionStorage.removeItem(TOKEN_KEY),
 };
 
+/**
+ * status: HTTP status code, or 0 when the server could not be reached.
+ * The UI turns the status into a translated message (see errorMessage in app.js);
+ * the raw backend detail is kept in `message` for debugging.
+ */
 export class ApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -20,10 +25,7 @@ export class ApiError extends Error {
 
 function describeError(detail, fallback) {
   if (typeof detail === "string") return detail;
-  // FastAPI validation errors: [{loc: [...], msg: "..."}]
-  if (Array.isArray(detail)) {
-    return detail.map((d) => `${d.loc?.slice(1).join(".") || "request"}: ${d.msg}`).join("; ");
-  }
+  if (Array.isArray(detail)) return detail.map((d) => d.msg).join("; "); // FastAPI validation errors
   return fallback;
 }
 
@@ -39,7 +41,7 @@ async function request(method, path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, "Cannot reach the server. Is the backend running?");
+    throw new ApiError(0, "Network error");
   }
 
   if (res.status === 204) return null;

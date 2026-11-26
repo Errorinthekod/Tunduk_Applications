@@ -43,7 +43,6 @@ class ApplicationUpdate(BaseModel):
 
 class StatusInfo(BaseModel):
     code: str
-    label: str
     needs_explanation: bool
     next: str | None
 

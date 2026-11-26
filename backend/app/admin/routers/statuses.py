@@ -5,26 +5,15 @@ from ..schemas import StatusInfo
 
 router = APIRouter(prefix="/statuses", tags=["admin: statuses"])
 
-# Admin-facing labels. Citizen-facing RU/KY texts live in the Flutter app.
-_LABELS = {
-    Status.SUBMITTED: "Application accepted",
-    Status.IN_REVIEW: "Under review",
-    Status.ACTION_REQUIRED: "Clarification required",
-    Status.COMPLETED: "Result ready",
-    Status.REJECTED: "Service denied",
-}
+# Only codes and rules here. Human-readable RU/KY titles live in the frontends
+# (admin_panel/js/locales, Flutter app), so the backend stays language-neutral.
 _NEEDS_EXPLANATION = {Status.ACTION_REQUIRED, Status.REJECTED}
 
 
 @router.get("", response_model=list[StatusInfo])
 def list_statuses():
-    """Known status codes, for dropdowns in the admin panel."""
+    """Known status codes with their rules, for dropdowns in the admin panel."""
     return [
-        StatusInfo(
-            code=s,
-            label=_LABELS[s],
-            needs_explanation=s in _NEEDS_EXPLANATION,
-            next=NEXT_STATUS.get(s),
-        )
+        StatusInfo(code=s, needs_explanation=s in _NEEDS_EXPLANATION, next=NEXT_STATUS.get(s))
         for s in Status
     ]

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 
 from .statuses import KNOWN_STATUSES, Status
 
@@ -32,15 +32,3 @@ class ApplicationOut(BaseModel):
     @property
     def action_required(self) -> bool:
         return self.status == Status.ACTION_REQUIRED
-
-
-class StatusUpdate(BaseModel):
-    """Set any status, including an unknown one (for the error-handling demo)."""
-
-    status: str = Field(min_length=1, max_length=32)
-    explanation_ru: str | None = None
-    explanation_ky: str | None = None
-
-
-class FailMode(BaseModel):
-    enabled: bool

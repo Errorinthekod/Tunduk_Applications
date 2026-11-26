@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Gate — Admin panel</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+  <!-- ============ Login ============ -->
+  <section id="login-view" class="login" hidden>
+    <form id="login-form" class="login__card">
+      <h1>Admin panel</h1>
+      <p class="muted">My Applications — status management</p>
+      <label class="field">
+        <span>Admin token</span>
+        <input id="login-token" type="password" autocomplete="current-password" required autofocus>
+      </label>
+      <p id="login-error" class="error" hidden></p>
+      <button type="submit" class="btn btn--primary">Sign in</button>
+    </form>
+  </section>
+
+  <!-- ============ Panel ============ -->
+  <div id="panel-view" hidden>
+    <header class="topbar">
+      <h1 class="topbar__title">Applications <span id="total-count" class="pill"></span></h1>
+
+      <div class="demo-controls" aria-label="Demo controls">
+        <span class="demo-controls__label">Demo:</span>
+        <button type="button" class="btn" data-demo="reset" title="Restore test applications">Reset data</button>
+        <button type="button" class="btn" data-demo="clear" title="Citizen sees 'no applications yet'">Clear all</button>
+        <label class="switch" title="Citizen API returns errors -> 'data didn't load'">
+          <input id="fail-toggle" type="checkbox">
+          <span>Simulate server error</span>
+        </label>
+      </div>
+
+      <button id="logout-btn" type="button" class="btn btn--ghost">Log out</button>
+    </header>
+
+    <div id="fail-banner" class="banner" hidden>
+      Server-error simulation is <b>ON</b>: the citizen app can't load applications right now.
+    </div>
+
+    <main class="content">
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search by number or service…" aria-label="Search">
+        <select id="status-filter" aria-label="Filter by status">
+          <option value="">All statuses</option>
+        </select>
+        <button id="refresh-btn" type="button" class="btn">Refresh</button>
+        <button id="create-btn" type="button" class="btn btn--primary">+ New application</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Number</th>
+              <th>Service</th>
+              <th>Status</th>
+              <th>Explanation</th>
+              <th>Updated</th>
+              <th class="table__actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="apps-body"></tbody>
+        </table>
+        <p id="table-empty" class="table-empty" hidden>No applications match.</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- ============ Create / edit dialog ============ -->
+  <dialog id="editor">
+    <form id="editor-form" method="dialog" class="editor">
+      <h2 id="editor-title">Edit application</h2>
+
+      <label class="field">
+        <span>Number</span>
+        <input name="number" placeholder="Leave empty to auto-generate" maxlength="32">
+      </label>
+      <label class="field">
+        <span>Service name (RU)</span>
+        <input name="service_name_ru" required maxlength="255">
+      </label>
+      <label class="field">
+        <span>Service name (KY)</span>
+        <input name="service_name_ky" required maxlength="255">
+      </label>
+
+      <label class="field">
+        <span>Status</span>
+        <select name="status_select" id="status-select"></select>
+      </label>
+      <label class="field" id="custom-status-field" hidden>
+        <span>Custom status code <small class="muted">(unknown to the citizen app — tests the fallback)</small></span>
+        <input name="status_custom" maxlength="32" placeholder="e.g. ON_HOLD">
+      </label>
+
+      <fieldset id="explanation-fields" class="field-group">
+        <legend>Explanation for the citizen</legend>
+        <p class="muted small">
+          What to clarify (Clarification required) or the reason (Service denied).
+          Leave empty to test the "no explanation" fallback.
+        </p>
+        <label class="field">
+          <span>RU</span>
+          <textarea name="explanation_ru" rows="2"></textarea>
+        </label>
+        <label class="field">
+          <span>KY</span>
+          <textarea name="explanation_ky" rows="2"></textarea>
+        </label>
+      </fieldset>
+
+      <p id="editor-error" class="error" hidden></p>
+
+      <div class="editor__buttons">
+        <button type="button" class="btn" id="editor-cancel">Cancel</button>
+        <button type="submit" class="btn btn--primary" id="editor-save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
